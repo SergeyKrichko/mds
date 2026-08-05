@@ -1,7 +1,6 @@
 #!/bin/bash
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
 # https://mls.sk87.top/deb--lib
-# mls-deb--lib-26-03-10
 # Sergey Krichko
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
 check_update() {
@@ -54,6 +53,7 @@ export BLUE='\e[34m'
 export CYAN='\e[36m'
 export AQUA='\e[1;36m'
 export NC='\e[0m'
+
 color_text() {
     local flags="-e "
     while [[ "$1" == -* ]]; do
@@ -231,9 +231,9 @@ validate_ip() {
         return 1
     fi
 }
-# validate_pass() {
 
-# }
+validate_pass() {
+}
 
 export -f check_update
 # export -f choice_menu_idx
