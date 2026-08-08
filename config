@@ -1,6 +1,6 @@
 #!/bin/bash
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
-# https://mls.sk87.top/deb--config
+# https://mds.sk87.top/config
 # Sergey Krichko
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
 set -euo pipefail
@@ -18,7 +18,7 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]]; then
-    if source <(curl -sLf https://mls.sk87.top/deb--lib); then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
         export DEB_LIB_STATUS="loaded"
         COLOR_SCRIPT=$AQUA
         color_text "$COLOR_SCRIPT" "[✓] deb--lib LOADED"
@@ -32,7 +32,7 @@ fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 source /etc/os-release
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-RAW_NAME="raw--deb--config"
+RAW_NAME="top-sk87-mds-config"
 setup_session $RAW_NAME
 tput smcup
 clear
@@ -43,7 +43,7 @@ color_text  "$COLOR_SCRIPT" "[✓] Session context initialized: $SESSION_DIR"
 upgrade_system
 
 # --- 4. WRAPPER LOGIC ---
-BASE_URL="https://mls.sk87.top"
+BASE_URL="https://mds.sk87.top"
 
 MENU_ITEMS=(
   "Install netsoft              | deb--config-netsoft"
