@@ -102,7 +102,7 @@ input_step() {
         esac
 
         if [[ "$valid" == "true" ]]; then
-            $var_name="$input"
+            printf -v "$var_name" '%s' "$input"
             return 0
         fi
 
