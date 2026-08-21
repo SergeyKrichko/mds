@@ -21,9 +21,9 @@ if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]]; then
     if source <(curl -sLf https://mds.sk87.top/lib); then
         export DEB_LIB_STATUS="loaded"
         COLOR_SCRIPT=$AQUA
-        color_text "$COLOR_SCRIPT" "[✓] deb--lib LOADED"
+        color_text "$COLOR_SCRIPT" "[✓] lib LOADED"
     else
-        echo -e "ERROR: not loaded deb--lib" >&2
+        echo -e "ERROR: not loaded lib" >&2
         exit 1
     fi
     else
@@ -46,10 +46,11 @@ upgrade_system
 BASE_URL="https://mds.sk87.top"
 
 MENU_ITEMS=(
-  "Install netsoft              | deb--config-netsoft"
-  "Config network (Static/DHCP) | deb--config-network"
-  "Config SSH Hardening         | deb--config-ssh"
-  "Add Sudo User                | deb--config-newuser"
+  "Install netsoft              | config-netsoft"
+  "Config network (Static/DHCP) | config-network"
+  "Config SSH Hardening         | config-ssh"
+  "Add Sudo User                | config-newuser"
+  "Config NFTABLES              | config-nftables"
 )
 
 show_menu MENU_ITEMS "$BASE_URL"
