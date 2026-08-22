@@ -1,15 +1,79 @@
 #!/bin/bash
-# #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# #
-# wget --no-check-certificate https://mls.sk87.top/deb-dc && bash deb-smbdc
-# version by 2026-06-12
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/install-smbdc
 # Sergey Krichko
-# #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# #
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if ! command -v curl >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y curl >/dev/null
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
+        export DEB_LIB_STATUS="loaded"
+    else
+        echo -e "ERROR: not loaded lib" >&2
+        exit 1
+    fi
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+module_init "install-smbdc" "$CYAN"
+check_update
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 . /etc/os-release
 
-log_info() {
-    echo -e "\n==>>==>>==>> Install DC (SAMBA Domain Controler) -> $1"
-}
-# #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# #
-# =============================================================================================== #
-# ------------------------ Install DC (SAMBA Domain Controler) ---------------------------------- #
+color_text "$COLOR_SCRIPT" "==>>==>>==>> [INSTALL-SMBDC] ->->-> Installing Samba Domain Controller..."
+
+# --- 1. Collect info ---
+input_step "Domain REALM (e.g. EXAMPLE.LOCAL)" "SMB_REALM" "ANY" || exit 0
+input_step "Domain name (e.g. EXAMPLE)" "SMB_DOMAIN" "ANY" || exit 0
+input_step "Administrator password" "SMB_ADMIN_PASS" "PASS" || exit 0
+
+SMB_REALM_UPPER="${SMB_REALM^^}"
+SMB_REALM_LOWER="${SMB_REALM,,}"
+
+# --- 2. Set hostname ---
+color_text "$COLOR_SCRIPT" "[HOSTNAME] -> configuring hostname:"
+CURRENT_HOSTNAME=$(hostname)
+color_text "$COLOR_SCRIPT" "Current hostname: $CURRENT_HOSTNAME"
+input_step "DC hostname (e.g. dc1)" "SMB_HOSTNAME" "ANY" || exit 0
+hostnamectl set-hostname "$SMB_HOSTNAME"
+
+# --- 3. Install Samba packages ---
+color_text "$COLOR_SCRIPT" "[INSTALL] -> installing Samba DC packages:"
+export DEBIAN_FRONTEND=noninteractive
+apt-get install -y samba samba-ad-dc samba-dsdb-modules samba-vfs-modules \
+    winbind libpam-winbind libnss-winbind krb5-user krb5-config
+
+# --- 4. Backup and remove default configs ---
+color_text "$COLOR_SCRIPT" "[CONFIGURE] -> backup default configs:"
+[ -f /etc/samba/smb.conf ] && mv /etc/samba/smb.conf /etc/samba/smb.conf.bak
+[ -f /etc/krb5.conf ] && mv /etc/krb5.conf /etc/krb5.conf.bak
+
+# --- 5. Provision domain ---
+color_text "$COLOR_SCRIPT" "[PROVISION] -> provisioning Samba AD domain..."
+samba-tool domain provision \
+    --use-rfc2307 \
+    --realm="$SMB_REALM_UPPER" \
+    --domain="$SMB_DOMAIN" \
+    --server-role=dc \
+    --dns-backend=SAMBA_INTERNAL \
+    --adminpass="$SMB_ADMIN_PASS"
+
+# --- 6. Copy Kerberos config ---
+color_text "$COLOR_SCRIPT" "[KERBEROS] -> configuring Kerberos:"
+cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
+
+# --- 7. Disable smbd/nmbd, enable samba-ad-dc ---
+color_text "$COLOR_SCRIPT" "[SERVICES] -> configuring services:"
+systemctl disable --now smbd nmbd winbind 2>/dev/null || true
+systemctl unmask samba-ad-dc 2>/dev/null || true
+systemctl enable --now samba-ad-dc
+
+# --- 8. Verify ---
+color_text "$COLOR_SCRIPT" "[VERIFY] -> checking domain:"
+samba-tool domain level show
+
+color_text "$GREEN" "==>>==>>==>> [INSTALL-SMBDC][✓] ->->-> Samba DC installed successfully!"
+color_text "$YELLOW" "[i] Domain: $SMB_REALM_UPPER | NetBIOS: $SMB_DOMAIN | Admin pass set."

@@ -1,17 +1,9 @@
 #!/bin/bash
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 # https://mds.sk87.top/config
 # Sergey Krichko
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
-# --- Check user ROOT ---
-die() {
-    echo "[!] $1 [!]" >&2
-    exit 1
-}
-if [[ $EUID -ne 0 ]]; then
-    die "Run is not root"
-fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 if ! command -v curl >/dev/null 2>&1; then
     apt update -y -qq && apt install -y curl >/dev/null
@@ -26,10 +18,11 @@ if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]]; then
         echo -e "ERROR: not loaded lib" >&2
         exit 1
     fi
-    else
+else
     COLOR_SCRIPT=$AQUA
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+require_root
 source /etc/os-release
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 RAW_NAME="top-sk87-mds-config"
@@ -37,12 +30,12 @@ setup_session $RAW_NAME
 tput smcup
 clear
 tput civis
-trap cleanup EXIT
+trap cleanup_tui EXIT
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-color_text  "$COLOR_SCRIPT" "[✓] Session context initialized: $SESSION_DIR"
+color_text "$COLOR_SCRIPT" "[✓] Session context initialized: $SESSION_DIR"
 upgrade_system
 
-# --- 4. WRAPPER LOGIC ---
+# --- WRAPPER LOGIC ---
 BASE_URL="https://mds.sk87.top"
 
 MENU_ITEMS=(

@@ -1,28 +1,24 @@
 #!/bin/bash
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
-# https://mls.sk87.top/deb--config-ssh
-# mls-deb--config-ssh-25-12-13
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/config-ssh
+# Sergey Krichko
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 if ! command -v curl >/dev/null 2>&1; then
     apt-get update -qq && apt-get install -y curl >/dev/null
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]]; then
-    if source <(curl -sLf https://mls.sk87.top/deb--lib); then
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
         export DEB_LIB_STATUS="loaded"
-        COLOR_SCRIPT=$GREEN
-        color_text "$COLOR_SCRIPT" "[✓] deb--lib LOADED"
     else
-        echo -e "ERROR: not loaded deb--lib" >&2
+        echo -e "ERROR: not loaded lib" >&2
         exit 1
     fi
-    else
-    COLOR_SCRIPT=$GREEN
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-source /etc/os-release
+module_init "config-ssh" "$GREEN"
 check_update
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
@@ -36,15 +32,9 @@ if [ -z "$CURRENT_PORT" ]; then
 fi
 
 color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-SSH] ->->-> Current SSH port: $CURRENT_PORT"
-color_text -n "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-SSH] ->->-> Enter a new port for SSH (1-65535): "
-# === Request new port ===
-input_step "==>>==>>==>> [CONFIG-SSH] ->->-> Current SSH port: " "NEW_PORT" "ANY" || exit 0
 
-# === Port check ===
-if ! [[ "$NEW_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
-    color_text "$RED" "==>>==>>==>> [CONFIG-SSH][!] ->->-> Invalid port: $NEW_PORT"
-    exit 1
-fi
+# === Request new port ===
+input_step "Enter a new port for SSH (1-65535)" "NEW_PORT" "PORT" || exit 0
 
 # === Changing the port in CONFIG_FILE ===
 color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-SSH] ->->-> Changing the SSH port to $NEW_PORT..."
@@ -56,9 +46,9 @@ else
     echo "Port $NEW_PORT" >> "$CONFIG_FILE"
 fi
 
-# === Opening a port in UFW (if enabled)===
+# === Opening a port in UFW (if enabled) ===
 if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
-    echo "==>>==>>==>> [CONFIG-SSH] ->->-> Setting up UFW..."
+    color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-SSH] ->->-> Setting up UFW..."
     ufw allow "$NEW_PORT"/tcp
 fi
 

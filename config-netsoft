@@ -1,31 +1,27 @@
 #!/bin/bash
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
-# https://mls.sk87.top/deb--config-netsoft
-# mls-deb--config-netsoft-25-12-13
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/config-netsoft
 # Sergey Krichko
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 if ! command -v curl >/dev/null 2>&1; then
     apt-get update -qq && apt-get install -y curl >/dev/null
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]]; then
-    if source <(curl -sLf https://mls.sk87.top/deb--lib); then
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
         export DEB_LIB_STATUS="loaded"
-        COLOR_SCRIPT=$GREEN
-        color_text "$COLOR_SCRIPT" "[✓] deb--lib LOADED"
     else
-        echo -e "ERROR: not loaded deb--lib" >&2
+        echo -e "ERROR: not loaded lib" >&2
         exit 1
     fi
-    else
-    COLOR_SCRIPT=$GREEN
 fi
+COLOR_SCRIPT=$GREEN
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-source /etc/os-release
+module_init "config-netsoft" "$GREEN"
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
-# 1. [CONFIG-NETSOFT]
+# [CONFIG-NETSOFT]
 color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NETSOFT] ->->-> Installing network programs..."
 install_pkg "mtr"
 install_pkg "net-tools"

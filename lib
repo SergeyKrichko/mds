@@ -1,7 +1,76 @@
 #!/bin/bash
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
-# https://mds.sk87.top/deb--lib
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/lib
+# Sergey Krichko
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+
+# --- Colors ---
+export RED='\e[31m'
+export GREEN='\e[32m'
+export YELLOW='\e[33m'
+export BLUE='\e[34m'
+export CYAN='\e[36m'
+export AQUA='\e[1;36m'
+export NC='\e[0m'
+
+# --- Output ---
+color_text() {
+    local flags="-e "
+    while [[ "$1" == -* ]]; do
+        flags+="$1 "
+        shift
+    done
+    local color="${1:-$NC}"
+    shift
+    echo $flags "${color}$*${NC}"
+}
+
+# --- Session management ---
+# Creates a new session directory. Called internally.
+setup_session() {
+    local RAW_NAME="${1:-raw-session-name}"
+    local SCRIPT_NAME="${0##*/}"
+
+    if [[ "$SCRIPT_NAME" == "bash" || -z "$SCRIPT_NAME" ]]; then
+        export SESSION_NAME=$RAW_NAME
+    else
+        export SESSION_NAME="${SCRIPT_NAME%.*}"
+    fi
+    export SESSION_DIR=$(mktemp -d -t "${SESSION_NAME}-XXXXXXXXXX")
+    if [[ ! -d "$SESSION_DIR" ]]; then
+        color_text "$RED" "Критическая ошибка: Не удалось создать SESSION_DIR" >&2
+        return 1
+    fi
+}
+
+# Ensures a session exists. If inherited from parent — reuses it.
+# If no session — creates a new one and sets cleanup trap.
+# Usage: ensure_session "module-name"
+ensure_session() {
+    local raw_name="${1:-module}"
+    if [[ -n "${SESSION_DIR:-}" && -d "${SESSION_DIR:-}" ]]; then
+        # Session inherited from parent — don't create, don't trap
+        return 0
+    fi
+    setup_session "$raw_name"
+    trap cleanup EXIT
+}
+
+# --- Cleanup ---
+# Basic cleanup — removes session dir only (for modules)
+cleanup() {
+    rm -rf "${SESSION_DIR:-}"
+}
+
+# TUI cleanup — restores terminal and removes session dir (for config menu)
+cleanup_tui() {
+    tput cnorm   2>/dev/null  # Show cursor
+    tput rmcup   2>/dev/null  # Restore main terminal buffer
+    rm -rf "${SESSION_DIR:-}"
+    echo "[*] Возврат в основную консоль. История сохранена."
+}
+
+# --- APT helpers ---
 check_update() {
     local mark="${1:-"check_update"}"
     local flag="$SESSION_DIR/apt_updated"
@@ -19,51 +88,76 @@ check_update() {
     return 0
 }
 
-choice_menu_idx() {
-    local -n choice_menu_idx_item="$1" 
-    local idx=$2
-    local raw="${choice_menu_idx_item[$idx]}"
-    local label="${raw%%|*}"; label="${label#"${label%%[![:space:]]*}"}"; label="${label%"${label##*[![:space:]]}"}"
-    local file="${raw##*|}"; file="${file#"${file%%[![:space:]]*}"}"; file="${file%"${file##*[![:space:]]}"}"
-
-    color_text "$COLOR_SCRIPT" "------------------------------------------"
-    color_text "$COLOR_SCRIPT" ">>> Запуск: $label"
-
-    if ! bash <(curl -sLf "$BASE_URL/$file"); then
-        color_text "$RED" "[!] Модуль завершился с ошибкой"
+install_pkg() {
+    local cmd=$1
+    local pkg=${2:-$1}
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        color_text "$YELLOW" "[+] Install: $pkg"
+        check_update "install_pkg $cmd"
+        apt-get install -y "$pkg" || {
+            color_text "$RED" "Error: Failed to install $pkg"
+            return 1
+        }
     fi
-    
-    color_text "$COLOR_SCRIPT" "------------------------------------------"
-    color_text "$COLOR_SCRIPT" "Нажмите любую клавишу для возврата в меню..."
-    read -rn1 _ < /dev/tty
 }
 
-cleanup() {
-    rm -rf "$SESSION_DIR"
-    tput cnorm   # Показать курсор
-    tput rmcup   # Вернуть основной буфер терминала
-    echo "[*] Возврат в основную консоль. История сохранена."
-}
-
-export RED='\e[31m'
-export GREEN='\e[32m'
-export YELLOW='\e[33m'
-export BLUE='\e[34m'
-export CYAN='\e[36m'
-export AQUA='\e[1;36m'
-export NC='\e[0m'
-
-color_text() {
-    local flags="-e "
-    while [[ "$1" == -* ]]; do
-        flags+="$1 "
-        shift
+# --- System upgrade ---
+upgrade_system(){
+    echo -ne "${COLOR_SCRIPT}UPGRADE SYSTEM? [Y/n]: ${NC}"
+    while true; do
+        read -n 1 -r -s answer < /dev/tty
+        case "$answer" in
+            [Yy]|"")
+                color_text "$CYAN" "[+] UPDATE and UPGRADE (dist-upgrade)..."
+                export DEBIAN_FRONTEND=noninteractive
+                apt-get update && apt-get dist-upgrade -y
+                echo "$(date +%T) DIST-UPGRADE SYSTEM == YES" > "$SESSION_DIR/apt_updated"
+                if [[ -f /run/reboot-required ]]; then
+                    color_text "$RED" "[!!!] WARNING: System reboot is required to apply updates!"
+                    if [[ -f /run/reboot-required.pkgs ]]; then
+                        echo "[*] Packages requiring reboot:"
+                        sed 's/^/    - /' /run/reboot-required.pkgs
+                    fi
+                fi
+                break
+                ;;
+            [Nn])
+                color_text "$CYAN" "[-] MISSED UPGRADE."
+                break
+                ;;
+            *)
+                ;;
+        esac
     done
-    local color="${1:-$NC}"
-    shift
-    echo $flags "${color}$*${NC}"
 }
 
+# --- Validation ---
+validate_ip() {
+    local ip="${1:-}"
+    local re='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
+
+    if [[ $ip =~ $re ]]; then
+        IFS='.' read -r -a octets <<< "$ip"
+        for octet in "${octets[@]}"; do
+            if ((octet < 0 || octet > 255)); then
+                return 1
+            fi
+        done
+        return 0
+    else
+        return 1
+    fi
+}
+
+validate_port() {
+    local port="${1:-}"
+    if [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1 && port <= 65535 )); then
+        return 0
+    fi
+    return 1
+}
+
+# --- Input ---
 input_step() {
     local prompt="$1"
     local var_name="$2"
@@ -90,12 +184,13 @@ input_step() {
             "IP")
                 validate_ip "$input" && valid=true
                 ;;
+            "PORT")
+                validate_port "$input" && valid=true
+                ;;
             "PASS")
-                # Пароль не должен быть пустым
                 [[ -n "$input" ]] && valid=true
                 ;;
             "ANY"|*)
-                # Любой непустой ввод
                 [[ -n "$input" ]] && valid=true
                 ;;
         esac
@@ -109,63 +204,54 @@ input_step() {
     done
 }
 
-install_pkg() {
-    local cmd=$1
-    local pkg=${2:-$1}
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-        color_text "$YELLOW" "[+] Install: $pkg"
-        check_update "install_pkg $cmd"
-        apt-get install -y "$pkg" || { 
-            color_text  "$RED" "Error: Failed to install $pkg";
-            return 1;
-        }
-    fi
-}
+# --- Menu ---
+choice_menu_idx() {
+    local -n choice_menu_idx_item="$1"
+    local idx=$2
+    local raw="${choice_menu_idx_item[$idx]}"
+    local label="${raw%%|*}"; label="${label#"${label%%[![:space:]]*}"}"; label="${label%"${label##*[![:space:]]}"}"
+    local file="${raw##*|}"; file="${file#"${file%%[![:space:]]*}"}"; file="${file%"${file##*[![:space:]]}"}"
 
-setup_session() {
-    local RAW_NAME="${1:-raw-session-name}"
-    local SCRIPT_NAME="${0##*/}"
-    
-    if [[ "$SCRIPT_NAME" == "bash" || -z "$SCRIPT_NAME" ]]; then
-        export SESSION_NAME=$RAW_NAME
-    else
-        export SESSION_NAME="${SCRIPT_NAME%.*}"
+    color_text "$COLOR_SCRIPT" "------------------------------------------"
+    color_text "$COLOR_SCRIPT" ">>> Запуск: $label"
+
+    if ! bash <(curl -sLf "$BASE_URL/$file"); then
+        color_text "$RED" "[!] Модуль завершился с ошибкой"
     fi
-    export SESSION_DIR=$(mktemp -d -t "${SESSION_NAME}-XXXXXXXXXX")
-    if [[ ! -d "$SESSION_DIR" ]]; then
-        color_text  "$RED" "Критическая ошибка: Не удалось создать SESSION_DIR" >&2
-        return 1
-    fi
+
+    color_text "$COLOR_SCRIPT" "------------------------------------------"
+    color_text "$COLOR_SCRIPT" "Нажмите любую клавишу для возврата в меню..."
+    read -rn1 _ < /dev/tty
 }
 
 show_menu() {
-    local -n show_menu_items="$1" 
+    local -n show_menu_items="$1"
     local show_menu_title="${2:-"no title"}"
     local choice
     while true; do
         clear
-        color_text  "$COLOR_SCRIPT" "=========================================="
-        color_text  "$COLOR_SCRIPT" "  Menu: $show_menu_title "
-        color_text  "$COLOR_SCRIPT" "=========================================="
+        color_text "$COLOR_SCRIPT" "=========================================="
+        color_text "$COLOR_SCRIPT" "  Menu: $show_menu_title "
+        color_text "$COLOR_SCRIPT" "=========================================="
 
         for i in "${!show_menu_items[@]}"; do
             raw_label_item="${show_menu_items[$i]}"
             label_item="${raw_label_item%%|*}"
             label_item="${label_item#"${label_item%%[![:space:]]*}"}"
             label_item="${label_item%"${label_item##*[![:space:]]}"}"
-            color_text  "$COLOR_SCRIPT" "$((i+1))) $label_item"
+            color_text "$COLOR_SCRIPT" "$((i+1))) $label_item"
         done
 
-        color_text  "$COLOR_SCRIPT" "0) Exit"
-        color_text  "$COLOR_SCRIPT" "=========================================="
-        color_text  -n "Choice MENU: "
+        color_text "$COLOR_SCRIPT" "0) Exit"
+        color_text "$COLOR_SCRIPT" "=========================================="
+        color_text -n "Choice MENU: "
         read -n 1 -r choice < /dev/tty
         echo -e "\n"
 
         case "$choice" in
-            0) 
+            0)
                 color_text "$YELLOW" "Завершение работы..."
-                return 0 
+                return 0
                 ;;
             [1-9])
                 idx=$((choice-1))
@@ -185,62 +271,81 @@ show_menu() {
     done
 }
 
-upgrade_system(){
-    echo -ne "${COLOR_SCRIPT}UPGRADE SYSTEM? [Y/n]: ${NC}"
+# Simple selection menu (returns index via variable).
+# Usage: select_item ARRAY_NAME "Title" RESULT_VAR
+select_item() {
+    local -n _sel_items="$1"
+    local title="$2"
+    local result_var="$3"
+    local choice
+
     while true; do
-        read -n 1 -r -s answer < /dev/tty
-        case "$answer" in
-            [Yy]|"") 
-                color_text "$CYAN" "[+] UPDATE and UPGRADE (dist-upgrade)..."
-                export DEBIAN_FRONTEND=noninteractive
-                apt-get update && apt-get dist-upgrade -y
-                echo "$(date +%T) DIST-UPGRADE SYSTEM == YES" > "$SESSION_DIR/apt_updated"
-                if [[ -f /run/reboot-required ]]; then
-                    color_text "$RED" "[!!!] WARNING: System reboot is required to apply updates!"
-                    if [[ -f /run/reboot-required.pkgs ]]; then
-                        echo "[*] Packages requiring reboot:"
-                        sed 's/^/    - /' /run/reboot-required.pkgs
-                    fi
-                fi
-                break 
-                ;;
-            [Nn])
-                color_text "$CYAN" "[-] MISSED UPGRADE."
-                break 
-                ;;
-            *)
-                ;;
-        esac
+        color_text "$COLOR_SCRIPT" "=========================================="
+        color_text "$COLOR_SCRIPT" "  $title"
+        color_text "$COLOR_SCRIPT" "=========================================="
+
+        for i in "${!_sel_items[@]}"; do
+            color_text "$COLOR_SCRIPT" "$((i+1))) ${_sel_items[$i]}"
+        done
+        color_text "$COLOR_SCRIPT" "0) Отмена"
+        color_text "$COLOR_SCRIPT" "=========================================="
+        color_text -n "Выбор: "
+        read -n 1 -r choice < /dev/tty
+        echo ""
+
+        if [[ "$choice" == "0" ]]; then
+            return 1
+        fi
+
+        if [[ "$choice" =~ ^[1-9]$ ]]; then
+            local idx=$((choice-1))
+            if (( idx >= 0 && idx < ${#_sel_items[@]} )); then
+                printf -v "$result_var" '%s' "${_sel_items[$idx]}"
+                return 0
+            fi
+        fi
+
+        color_text "$RED" "Неверный ввод."
+        sleep 1
     done
 }
 
-validate_ip() {
-    local ip="${1:-}"
-    local re='^([0-9]{1,3}\.){3}[0-9]{1,3}$'
-    
-    if [[ $ip =~ $re ]]; then
-        IFS='.' read -r -a octets <<< "$ip"
-        for octet in "${octets[@]}"; do
-            if ((octet < 0 || octet > 255)); then
-                return 1
-            fi
-        done
-        return 0
-    else
-        return 1
+# --- Root check ---
+require_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo "[!] Run is not root [!]" >&2
+        exit 1
     fi
 }
 
-validate_pass() {
+# --- Standard module header ---
+# Usage at top of each module:
+#   source <(curl -sLf https://mds.sk87.top/lib) || { echo "ERROR: lib not loaded" >&2; exit 1; }
+#   module_init "module-name" "$GREEN"
+module_init() {
+    local raw_name="${1:-module}"
+    local color="${2:-$GREEN}"
+    export COLOR_SCRIPT="$color"
+    require_root
+    source /etc/os-release
+    ensure_session "$raw_name"
+    color_text "$COLOR_SCRIPT" "[✓] Module initialized: $raw_name"
 }
 
+# --- Exports ---
 export -f check_update
-# export -f choice_menu_idx
+export -f choice_menu_idx
 export -f cleanup
+export -f cleanup_tui
 export -f color_text
+export -f ensure_session
 export -f input_step
 export -f install_pkg
+export -f module_init
+export -f require_root
+export -f select_item
 export -f setup_session
-# export -f show_menu
+export -f show_menu
 export -f upgrade_system
 export -f validate_ip
+export -f validate_port

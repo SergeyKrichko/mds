@@ -1,14 +1,38 @@
 #!/bin/bash
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
-# mds-install-singbox-26-08-16
-# wget https://mds.sk87.top/install-singbox && bash
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
-set -e
-sudo mkdir -p /etc/apt/keyrings
-sudo curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc
-sudo chmod a+r /etc/apt/keyrings/sagernet.asc
+# https://mds.sk87.top/install-singbox
+# Sergey Krichko
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+set -euo pipefail
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if ! command -v curl >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y curl >/dev/null
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
+        export DEB_LIB_STATUS="loaded"
+    else
+        echo -e "ERROR: not loaded lib" >&2
+        exit 1
+    fi
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+module_init "install-singbox" "$CYAN"
+check_update
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
-cat <<EOF | sudo tee /etc/apt/sources.list.d/sagernet.sources > /dev/null
+color_text "$COLOR_SCRIPT" "==>>==>>==>> [INSTALL-SINGBOX] ->->-> Installing sing-box..."
+
+# --- 1. GPG key ---
+color_text "$COLOR_SCRIPT" "[GPG] -> add sagernet GPG key:"
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://sing-box.app/gpg.key -o /etc/apt/keyrings/sagernet.asc
+chmod a+r /etc/apt/keyrings/sagernet.asc
+
+# --- 2. Repository ---
+color_text "$COLOR_SCRIPT" "[REPO] -> add sing-box repository:"
+cat <<EOF | tee /etc/apt/sources.list.d/sagernet.sources > /dev/null
 Types: deb
 URIs: https://deb.sagernet.org/
 Suites: *
@@ -17,5 +41,12 @@ Enabled: yes
 Signed-By: /etc/apt/keyrings/sagernet.asc
 EOF
 
-sudo apt-get update
-sudo apt-get install -y sing-box
+apt-get update -y
+
+# --- 3. Install ---
+color_text "$COLOR_SCRIPT" "[INSTALL] -> installing sing-box:"
+apt-get install -y sing-box
+
+# --- 4. Result ---
+sing-box version 2>/dev/null || true
+color_text "$GREEN" "==>>==>>==>> [INSTALL-SINGBOX][✓] ->->-> sing-box installed successfully!"

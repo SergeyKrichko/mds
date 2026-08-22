@@ -1,40 +1,50 @@
 #!/bin/bash
-# #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# #
-# wget --no-check-certificate https://mls.sk87.top/deb-psql && bash deb-psql 18
-# version by 2026-06-07
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/install-psql
+# bash <(curl -sLf https://mds.sk87.top/install-psql) 18
 # Sergey Krichko
-# #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# #
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
-. /etc/os-release
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 if [[ -z "${1:-}" ]]; then
-    echo "Ошибка: не указана версия POSTGRESQL в $0">&2
+    echo "Ошибка: не указана версия POSTGRESQL. Использование: $0 <версия>" >&2
+    echo "Пример: $0 18" >&2
     exit 1
 fi
 PSQL_VER=$1
-log_info() {
-    echo -e "\n==>>==>>==>> Install POSTGRESQL (postgresql repository) -> $1"
-}
-# #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# #
-# =============================================================================================== #
-# ------------------------- Install POSTGRESQL https://postgresql.org/ -------------------------- #
-# ----------------------------------------------------------------------------------------------- #
-# 0. [SYSTEM]
-log_info "[SYSTEM] -> run update:"
-sudo apt update -y
-log_info "[SYSTEM] -> [✓ - update completed!]"
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if ! command -v curl >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y curl >/dev/null
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
+        export DEB_LIB_STATUS="loaded"
+    else
+        echo -e "ERROR: not loaded lib" >&2
+        exit 1
+    fi
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+module_init "install-psql" "$CYAN"
+check_update
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+. /etc/os-release
 
-# ----------------------------------------------------------------------------------------------- #
-log_info "[SOFT] -> install:"
-sudo apt install -y curl ca-certificates
-log_info "[SOFT] -> [✓ - installed!]"
+color_text "$COLOR_SCRIPT" "==>>==>>==>> [INSTALL-PSQL] ->->-> Installing PostgreSQL $PSQL_VER..."
 
-# ----------------------------------------------------------------------------------------------- #
-log_info "add key gpg:"
-sudo install -d /usr/share/postgresql-common/pgdg
-sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+# --- 1. Dependencies ---
+color_text "$COLOR_SCRIPT" "[SOFT] -> install dependencies:"
+apt-get install -y curl ca-certificates
 
-log_info "add repository:"
-sudo tee /etc/apt/sources.list.d/pgdg.sources > /dev/null <<EOF
+# --- 2. GPG key ---
+color_text "$COLOR_SCRIPT" "[GPG] -> add PostgreSQL GPG key:"
+install -d /usr/share/postgresql-common/pgdg
+curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+# --- 3. Repository ---
+color_text "$COLOR_SCRIPT" "[REPO] -> add PostgreSQL repository:"
+tee /etc/apt/sources.list.d/pgdg.sources > /dev/null <<EOF
 Types: deb deb-src
 URIs: https://apt.postgresql.org/pub/repos/apt
 Suites: ${VERSION_CODENAME}-pgdg
@@ -43,31 +53,20 @@ Components: main
 Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
 EOF
 
-# ----------------------------------------------------------------------------------------------- #
-log_info "update:"
-sudo apt update -y
+apt-get update -y
 
-# LXC user uid
+# --- 4. Create postgres user (LXC UID mapping) ---
 if ! getent group postgres >/dev/null; then
-    sudo groupadd -g 350 postgres
+    groupadd -g 350 postgres
 fi
 if ! getent passwd postgres >/dev/null; then
-    sudo useradd -u 350 -g 350 -s /bin/bash -d /var/lib/postgresql postgres
+    useradd -u 350 -g 350 -s /bin/bash -d /var/lib/postgresql postgres
 fi
-# ----------------------------------------------------------------------------------------------- #
-log_info "Install POSTGRESQL"
-sudo apt install -y postgresql-${PSQL_VER}
-# ----------------------------------------------------------------------------------------------- #
-# =============================================================================================== #
-echo "==>>==>>==>>============<<==<<==<<=="
-sleep 1
-log_info "Installed version:" && sudo psql --version
-sleep 1
-echo "==>>==>>==>>============<<==<<==<<=="
-sleep 1
-echo "==>>==>>==>> POSTGRESQL <<==<<==<<=="
-sleep 1
-echo "==>>==>>==>> SUCCESSFUL <<==<<==<<=="
-sleep 1
-echo "==>>==>>==>>============<<==<<==<<=="
-sleep 5
+
+# --- 5. Install ---
+color_text "$COLOR_SCRIPT" "[INSTALL] -> installing PostgreSQL $PSQL_VER:"
+apt-get install -y postgresql-${PSQL_VER}
+
+# --- 6. Result ---
+color_text "$COLOR_SCRIPT" "Installed version:" && psql --version
+color_text "$GREEN" "==>>==>>==>> [INSTALL-PSQL][✓] ->->-> PostgreSQL $PSQL_VER installed successfully!"

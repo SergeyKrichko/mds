@@ -1,32 +1,41 @@
 #!/bin/bash
-# #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# #
-# wget --no-check-certificate https://mls.sk87.top/deb-nginx && bash deb-nginx
-# version by 2026-06-07
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/install-nginx
 # Sergey Krichko
-# #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# #
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if ! command -v curl >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y curl >/dev/null
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
+        export DEB_LIB_STATUS="loaded"
+    else
+        echo -e "ERROR: not loaded lib" >&2
+        exit 1
+    fi
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+module_init "install-nginx" "$CYAN"
+check_update
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 . /etc/os-release
-log_info() {
-    echo -e "\n==>>==>>==>> Install NGINX (nginx repository) -> $1"
-}
-# #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-# #
-# =============================================================================================== #
-# ------------------------------ Install NGINX (nginx repository) ------------------------------- #
-# ----------------------------------------------------------------------------------------------- #
-# 0. [SYSTEM]
-log_info "[SYSTEM] -> run update:"
-sudo apt update -y
-log_info "[SYSTEM] -> [✓ - update completed!]"
-# ----------------------------------------------------------------------------------------------- #
-log_info "[SOFT] -> install:"
-sudo apt install -y curl gnupg2 ca-certificates debian-archive-keyring
-log_info "[SOFT] -> [✓ - installed!]"
-# ----------------------------------------------------------------------------------------------- #
-log_info "add key gpg:"
-curl https://nginx.org/keys/nginx_signing.key | gpg --dearmor | sudo tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null
 
-log_info "add repository:"
-sudo tee /etc/apt/sources.list.d/nginx.sources > /dev/null <<EOF
+color_text "$COLOR_SCRIPT" "==>>==>>==>> [INSTALL-NGINX] ->->-> Installing NGINX (nginx repository)..."
+
+# --- 1. Dependencies ---
+color_text "$COLOR_SCRIPT" "[SOFT] -> install dependencies:"
+apt-get install -y curl gnupg2 ca-certificates debian-archive-keyring
+
+# --- 2. GPG key ---
+color_text "$COLOR_SCRIPT" "[GPG] -> add nginx GPG key:"
+curl https://nginx.org/keys/nginx_signing.key | gpg --dearmor | tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null
+
+# --- 3. Repository ---
+color_text "$COLOR_SCRIPT" "[REPO] -> add nginx repository:"
+tee /etc/apt/sources.list.d/nginx.sources > /dev/null <<EOF
 Types: deb
 URIs: https://nginx.org/packages/$ID
 Suites: ${VERSION_CODENAME}
@@ -35,26 +44,25 @@ Signed-By: /usr/share/keyrings/nginx-archive-keyring.gpg
 EOF
 
 echo -e "Package: *\nPin: origin nginx.org\nPin: release o=nginx\nPin-Priority: 900\n" \
-  | sudo tee /etc/apt/preferences.d/99nginx
-# ----------------------------------------------------------------------------------------------- #
-log_info "update:"
-sudo apt update -y
+  | tee /etc/apt/preferences.d/99nginx
 
-# LXC user uid
+apt-get update -y
+
+# --- 4. Create nginx user (LXC UID mapping) ---
 if ! getent group nginx >/dev/null; then
-    sudo groupadd -g 330 nginx
+    groupadd -g 330 nginx
 fi
 if ! getent passwd nginx >/dev/null; then
-    sudo useradd -u 330 -g 330 --system --no-create-home -s /usr/sbin/nologin nginx
+    useradd -u 330 -g 330 --system --no-create-home -s /usr/sbin/nologin nginx
 fi
-# ----------------------------------------------------------------------------------------------- #
-log_info "Install NGINX LAST STABLE VERSION:"
-sudo apt install -y nginx
-# ----------------------------------------------------------------------------------------------- #
-log_info "Configure"
-#---info about server
-#sudo sed -i  '/<h1>Welcome to nginx!</h1>//<h1>Welcome to nginx! </h1>/s  /usr/share/nginx/html/index.html
-sudo tee /usr/share/nginx/html/index.html > /dev/null <<EOF
+
+# --- 5. Install ---
+color_text "$COLOR_SCRIPT" "[INSTALL] -> installing NGINX:"
+apt-get install -y nginx
+
+# --- 6. Configure default page ---
+color_text "$COLOR_SCRIPT" "[CONFIGURE] -> setting default page:"
+tee /usr/share/nginx/html/index.html > /dev/null <<EOF
 <!DOCTYPE html>
 <html>
 <head>
@@ -69,26 +77,15 @@ font-family: Tahoma, Verdana, Arial, sans-serif; }
 <h1>Welcome to nginx! ${HOSTNAME}</h1>
 <p>If you see this page, the nginx web server is successfully installed and
 working. Further configuration is required.</p>
-
 <p><em>Thank you for using nginx.</em></p>
 </body>
 </html>
 EOF
 
-# ----------------------------------------------------------------------------------------------- #
-log_info "Start NGINX"
-sudo systemctl enable --now nginx
-# =============================================================================================== #
-# ----------------------------------------------------------------------------------------------- #
-echo "==>>==>>==>>============<<==<<==<<=="
-sleep 1
-log_info "Installed version:" && sudo nginx -v
-sleep 1
-echo "==>>==>>==>>============<<==<<==<<=="
-sleep 1
-echo "==>>==>>==>>   NGINX    <<==<<==<<=="
-sleep 1
-echo "==>>==>>==>> SUCCESSFUL <<==<<==<<=="
-sleep 1
-echo "==>>==>>==>>============<<==<<==<<=="
-sleep 5
+# --- 7. Start ---
+color_text "$COLOR_SCRIPT" "[START] -> enabling and starting NGINX:"
+systemctl enable --now nginx
+
+# --- 8. Result ---
+color_text "$COLOR_SCRIPT" "Installed version:" && nginx -v
+color_text "$GREEN" "==>>==>>==>> [INSTALL-NGINX][✓] ->->-> NGINX installed successfully!"

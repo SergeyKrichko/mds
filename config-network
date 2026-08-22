@@ -1,28 +1,24 @@
 #!/bin/bash
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
-# https://mls.sk87.top/deb--config-network
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/config-network
 # Sergey Krichko
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 if ! command -v curl >/dev/null 2>&1; then
     apt-get update -qq && apt-get install -y curl >/dev/null
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]]; then
-    if source <(curl -sLf https://mls.sk87.top/deb--lib); then
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
         export DEB_LIB_STATUS="loaded"
-        COLOR_SCRIPT=$GREEN
-        color_text "$COLOR_SCRIPT" "[✓] deb--lib LOADED"
     else
-        echo -e "ERROR: not loaded deb--lib" >&2
+        echo -e "ERROR: not loaded lib" >&2
         exit 1
     fi
-    else
-    COLOR_SCRIPT=$GREEN
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-source /etc/os-release
+module_init "config-network" "$GREEN"
 check_update
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NETWORK] ->->-> START Configuration..."
@@ -32,36 +28,20 @@ IFACE=""
 DEFAULT_IFACE=$(ip -o -4 route show to default | awk '{print $5}' | head -n1)
 all_interfaces=($(ip -o link show | awk -F': ' '$2 != "lo" {print $2}'))
 
-# color_text "$COLOR_SCRIPT" ">>> Обнаружены интерфейсы: ${all_interfaces[*]}"
-# color_text "$COLOR_SCRIPT" "Рекомендованный (GW): ${DEFAULT_IFACE:-"не найден"}"
-# color_text "$COLOR_SCRIPT" "--------------------------------------------------------"
+# --- Select interface ---
+color_text "$COLOR_SCRIPT" ">>> Обнаружены интерфейсы: ${all_interfaces[*]}"
+color_text "$COLOR_SCRIPT" "Рекомендованный (GW): ${DEFAULT_IFACE:-"не найден"}"
+color_text "$COLOR_SCRIPT" "--------------------------------------------------------"
 
-show_menu all_interfaces ">>> Обнаружены интерфейсы:"
-
-
-color_text -n "$COLOR_SCRIPT" "Выберите интерфейс [По умолчанию: $DEFAULT_IFACE] (5 сек): "
-for ((i=5; i>0; i--)); do
-    echo -ne "\rВыберите интерфейс [По умолчанию: $DEFAULT_IFACE] ($i сек): "
-    if read -t 1 -r -n1 user_input < /dev/tty; then
-        IFACE=$user_input
-        break
-    fi
-done
-
-echo "" # Перенос строки после цикла
-
-if [[ -z "$IFACE" ]]; then
+if select_item all_interfaces "Выберите интерфейс" IFACE; then
+    color_text "$GREEN" "[✓] Выбран интерфейс: $IFACE"
+else
     if [[ -n "$DEFAULT_IFACE" ]]; then
-        color_text "$COLOR_SCRIPT" "[i] Время вышло. Автовыбор: $DEFAULT_IFACE"
+        color_text "$COLOR_SCRIPT" "[i] Автовыбор: $DEFAULT_IFACE"
         IFACE=$DEFAULT_IFACE
     else
-        color_text "$RED" "[!] Тайм-аут, а дефолтный интерфейс не найден. Введите вручную."
+        color_text "$RED" "[!] Дефолтный интерфейс не найден. Введите вручную."
         input_step "Interface name" "IFACE" "ANY" || exit 1
-    fi
-else
-    if ! ls /sys/class/net | grep -qw "$IFACE"; then
-        color_text "$RED" "[!] Ошибка: '$IFACE' не существует. Откат к $DEFAULT_IFACE"
-        IFACE=$DEFAULT_IFACE
     fi
 fi
 
@@ -69,9 +49,7 @@ fi
 
 color_text "$GREEN" "[✓] Работаем с интерфейсом: $IFACE"
 
-
-
-
+# --- Select mode ---
 color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NETWORK] ->->-> Interface found: $IFACE"
 color_text "$COLOR_SCRIPT" "Select network setup type:"
 color_text "$COLOR_SCRIPT" "d) Dynamic (DHCP)"
@@ -111,13 +89,13 @@ iface $IFACE inet static
     gateway $GATEWAY
 EOF
 
-echo "nameserver $DNS" > /etc/resolv.conf
+    echo "nameserver $DNS" > /etc/resolv.conf
 else
     color_text "$RED" "==>>==>>==>> [CONFIG-NETWORK][!] ->->-> Interrupted. No changes made."
-    return 1
+    exit 1
 fi
 
-# 3. Применение настроек
+# --- Apply settings ---
 color_text "$YELLOW" "==>>==>>==>> [CONFIG-NETWORK] ->->-> Restarting interface $IFACE..."
 systemctl enable --now systemd-networkd
 networkctl reload

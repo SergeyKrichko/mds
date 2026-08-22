@@ -1,19 +1,63 @@
 #!/bin/bash
-# wget https://mls.sk87.top/deb--config-ssh && bash deb--config-ssh
-# version by 2025-10-10
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/install-vlmcsd
 # Sergey Krichko
-#################
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+set -euo pipefail
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if ! command -v curl >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y curl >/dev/null
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
+        export DEB_LIB_STATUS="loaded"
+    else
+        echo -e "ERROR: not loaded lib" >&2
+        exit 1
+    fi
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+module_init "install-vlmcsd" "$CYAN"
+check_update
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
-apt install git build-essential debhelper -y
+color_text "$COLOR_SCRIPT" "==>>==>>==>> [INSTALL-VLMCSD] ->->-> Building and installing vlmcsd..."
 
-mkdir ~/vlmcsd-src
-cd ~/vlmcsd-src
-git clone https://github.com/Wind4/vlmcsd
-cd ~/vlmcsd-src/vlmcsd
+# --- 1. Install build deps ---
+color_text "$COLOR_SCRIPT" "[DEPS] -> installing build dependencies:"
+apt-get install -y git build-essential debhelper fakeroot
 
-git submodule update --init debian
+# --- 2. Clone and build ---
+BUILD_DIR=$(mktemp -d -t "vlmcsd-build-XXXXXXXXXX")
+color_text "$COLOR_SCRIPT" "[BUILD] -> cloning vlmcsd to $BUILD_DIR..."
 
-dpkg-buildpackage -rfakeroot -D -us -uc
+git clone https://github.com/Wind4/vlmcsd "$BUILD_DIR/vlmcsd"
 
-dpkg -i ./vlmcsd_1113_amd64.deb
+(
+    cd "$BUILD_DIR/vlmcsd"
+    git submodule update --init debian
+    color_text "$COLOR_SCRIPT" "[BUILD] -> building .deb package..."
+    dpkg-buildpackage -rfakeroot -D -us -uc
+)
 
+# --- 3. Install built package ---
+color_text "$COLOR_SCRIPT" "[INSTALL] -> installing vlmcsd .deb package:"
+DEB_FILE=$(find "$BUILD_DIR" -maxdepth 1 -name "vlmcsd_*.deb" | head -n1)
+if [[ -z "$DEB_FILE" ]]; then
+    color_text "$RED" "[!] .deb package not found in $BUILD_DIR"
+    rm -rf "$BUILD_DIR"
+    exit 1
+fi
+dpkg -i "$DEB_FILE"
+
+# --- 4. Cleanup ---
+color_text "$COLOR_SCRIPT" "[CLEANUP] -> removing build directory:"
+rm -rf "$BUILD_DIR"
+
+# --- 5. Verify ---
+if command -v vlmcsd >/dev/null 2>&1; then
+    vlmcsd -V 2>/dev/null || true
+fi
+
+color_text "$GREEN" "==>>==>>==>> [INSTALL-VLMCSD][✓] ->->-> vlmcsd installed successfully!"

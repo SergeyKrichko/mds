@@ -1,49 +1,39 @@
 #!/bin/bash
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
-# https://mls.sk87.top/deb--config-newuser
-# mls-deb--config-newuser-25-12-13
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/config-newuser
 # Sergey Krichko
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
 if ! command -v curl >/dev/null 2>&1; then
     apt-get update -qq && apt-get install -y curl >/dev/null
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]]; then
-    if source <(curl -sLf https://mls.sk87.top/deb--lib); then
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
         export DEB_LIB_STATUS="loaded"
-        COLOR_SCRIPT=$GREEN
-        color_text "$COLOR_SCRIPT" "[✓] deb--lib LOADED"
     else
-        echo -e "ERROR: not loaded deb--lib" >&2
+        echo -e "ERROR: not loaded lib" >&2
         exit 1
     fi
-    else
-    COLOR_SCRIPT=$GREEN
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
-source /etc/os-release
+module_init "config-newuser" "$GREEN"
 check_update
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 
 install_pkg "sudo"
 
-# 1.[CONFIG-NEWUSER] Checking if the user exists
+# 1.[CONFIG-NEWUSER] Create user
 color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NEWUSER] ->->-> create user..."
-color_text -n "$COLOR_SCRIPT" "Insert name new user: "
-read -r USERNAME < /dev/tty
+input_step "Insert name new user" "USERNAME" "ANY" || exit 0
 
 if id "$USERNAME" &>/dev/null; then
     color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NEWUSER] ->->-> User '$USERNAME' already exists."
 else
-    # === insert password ===
-    color_text -n "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NEWUSER] ->->-> Insert password for $USERNAME: "
-    read -r -s -p PASSWORD < /dev/tty
-    echo
-    color_text -n "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NEWUSER] ->->-> Repeat password: "
-    read -s -p  PASSWORD2 < /dev/tty
-    echo
+    # === Insert password ===
+    input_step "Password for $USERNAME" "PASSWORD" "PASS" || exit 0
+    input_step "Repeat password" "PASSWORD2" "PASS" || exit 0
 
     if [ "$PASSWORD" != "$PASSWORD2" ]; then
         color_text "$RED" "==>>==>>==>> [CONFIG-NEWUSER] ->->-> [!] Passwords do not match. Aborting."
@@ -57,6 +47,6 @@ else
     color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NEWUSER] ->->-> User $USERNAME created"
 fi
 
-# 2.[CONFIG-NEWUSER] Add USERNAME to group sudo ===
+# 2.[CONFIG-NEWUSER] Add USERNAME to group sudo
 usermod -aG sudo "$USERNAME"
-color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NEWUSER] ->->-> User $USERNAME added to sudo group"
+color_text "$COLOR_SCRIPT" "==>>==>>==>> [CONFIG-NEWUSER][✓] ->->-> User $USERNAME added to sudo group"
