@@ -1,64 +1,103 @@
 #!/bin/bash
 #=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
-# wget https://mls.sk87.top/zab74-d13-sfa2-pn && bash zab74-d13-sfa2-pn
-# version by 2025-11-16
+# https://mds.sk87.top/install-zab74-d13-lxc
+# Zabbix 7.4 on Debian 13 (LXC)
 # Sergey Krichko
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
-. /etc/os-release
-# $DBPassword=$1
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if ! command -v curl >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y curl >/dev/null
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
+        export DEB_LIB_STATUS="loaded"
+    else
+        echo -e "ERROR: not loaded lib" >&2
+        exit 1
+    fi
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+module_init "install-zab74-d13-lxc" "$CYAN"
+check_update
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+. /etc/os-release
 
-# 0. [SYSTEM]
-echo "==>>==>>==>> [SYSTEM] ->->-> Update and Upgrade"
-apt update -y && apt upgrade -y
-echo "==>>==>>==>> [SYSTEM][✓] ->->-> update completed!"
+color_text "$COLOR_SCRIPT" "==>>==>>==>> [INSTALL-ZABBIX] ->->-> Zabbix 7.4 on Debian 13 (LXC)..."
 
-wget --no-check-certificate https://mls.sk87.top/deb-nginx && bash deb-nginx 1.28.0-1~trixie
-wget --no-check-certificate https://mls.sk87.top/deb-psql && bash deb-psql 18
+# --- 0. Collect DB password ---
+input_step "Password for Zabbix DB user" "DB_PASSWORD" "PASS" || exit 0
 
-# 1. [add repo ZABBIX]
-wget https://repo.zabbix.com/zabbix/7.4/release/debian/pool/main/z/zabbix-release/zabbix-release_latest_7.4+debian13_all.deb
-dpkg -i zabbix-release_latest_7.4+debian13_all.deb
-apt update
+# --- 1. Install NGINX via mds.sk87.top ---
+color_text "$COLOR_SCRIPT" "[NGINX] -> installing via mds.sk87.top/install-nginx..."
+bash <(curl -sLf https://mds.sk87.top/install-nginx)
 
-# 2.1. [Install Zabbix server, frontend, agent2]
-apt install -y zabbix-server-pgsql zabbix-frontend-php php8.4-pgsql zabbix-nginx-conf zabbix-sql-scripts zabbix-agent2
+# --- 2. Install PostgreSQL via mds.sk87.top ---
+color_text "$COLOR_SCRIPT" "[PSQL] -> installing PostgreSQL 18 via mds.sk87.top/install-psql..."
+bash <(curl -sLf https://mds.sk87.top/install-psql) 18
 
-# 2.2. [Install Zabbix agent 2 plugins]
-apt install -y zabbix-agent2-plugin-mssql zabbix-agent2-plugin-postgresql
+# --- 3. Add Zabbix repository ---
+color_text "$COLOR_SCRIPT" "[REPO] -> adding Zabbix 7.4 repository..."
+curl -fsSLo /tmp/zabbix-release.deb https://repo.zabbix.com/zabbix/7.4/release/debian/pool/main/z/zabbix-release/zabbix-release_latest_7.4+debian13_all.deb
+dpkg -i /tmp/zabbix-release.deb
+rm -f /tmp/zabbix-release.deb
+apt-get update -y
 
-# 3..1 [Create DB]
-sudo -u postgres createuser --pwprompt zabbix
-sudo -u postgres createdb -O zabbix zabbix
+# --- 4. Install Zabbix server, frontend, agent2 ---
+color_text "$COLOR_SCRIPT" "[INSTALL] -> installing Zabbix server, frontend, agent2..."
+apt-get install -y zabbix-server-pgsql zabbix-frontend-php php8.4-pgsql zabbix-nginx-conf zabbix-sql-scripts zabbix-agent2
 
-# 3.2
+# --- 5. Install Zabbix agent 2 plugins ---
+color_text "$COLOR_SCRIPT" "[INSTALL] -> installing Zabbix agent 2 plugins..."
+apt-get install -y zabbix-agent2-plugin-mssql zabbix-agent2-plugin-postgresql
+
+# --- 6. Create DB ---
+color_text "$COLOR_SCRIPT" "[DB] -> creating Zabbix database and user..."
+sudo -u postgres psql -c "CREATE USER zabbix WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || \
+    color_text "$YELLOW" "[i] User 'zabbix' may already exist"
+sudo -u postgres psql -c "CREATE DATABASE zabbix OWNER zabbix;" 2>/dev/null || \
+    color_text "$YELLOW" "[i] Database 'zabbix' may already exist"
+
+# --- 7. Import schema ---
+color_text "$COLOR_SCRIPT" "[DB] -> importing Zabbix schema (this may take a while)..."
 zcat /usr/share/zabbix/sql-scripts/postgresql/server.sql.gz | sudo -u zabbix psql zabbix
 
-# 3.3. Настройте базу данных для Zabbix сервера
-# Отредактируйте файл
-nano /etc/zabbix/zabbix_server.conf
+# --- 8. Configure Zabbix server ---
+color_text "$COLOR_SCRIPT" "[CONFIG] -> configuring /etc/zabbix/zabbix_server.conf..."
+ZABBIX_CONF="/etc/zabbix/zabbix_server.conf"
 
-# 4 Start
+# Set DBPassword
+if grep -q "^# DBPassword=" "$ZABBIX_CONF"; then
+    sed -i "s/^# DBPassword=.*/DBPassword=$DB_PASSWORD/" "$ZABBIX_CONF"
+elif grep -q "^DBPassword=" "$ZABBIX_CONF"; then
+    sed -i "s/^DBPassword=.*/DBPassword=$DB_PASSWORD/" "$ZABBIX_CONF"
+else
+    echo "DBPassword=$DB_PASSWORD" >> "$ZABBIX_CONF"
+fi
+
+# --- 9. Configure PHP-FPM pool for Zabbix ---
+color_text "$COLOR_SCRIPT" "[CONFIG] -> configuring PHP-FPM pool for Zabbix..."
+ZABBIX_FPM_CONF="/etc/php/8.4/fpm/pool.d/zabbix-php-fpm.conf"
+if [[ -f "$ZABBIX_FPM_CONF" ]]; then
+    sed -i 's/^user = .*/user = nginx/' "$ZABBIX_FPM_CONF"
+    sed -i 's/^group = .*/group = nginx/' "$ZABBIX_FPM_CONF"
+    sed -i 's|^listen = .*|listen = /var/run/php/zabbix.sock|' "$ZABBIX_FPM_CONF"
+    sed -i 's/^listen\.owner = .*/listen.owner = nginx/' "$ZABBIX_FPM_CONF"
+    # Add listen.allowed_clients if missing
+    if ! grep -q "^listen.allowed_clients" "$ZABBIX_FPM_CONF"; then
+        echo "listen.allowed_clients = 127.0.0.1" >> "$ZABBIX_FPM_CONF"
+    fi
+else
+    color_text "$YELLOW" "[i] $ZABBIX_FPM_CONF not found, skipping PHP-FPM pool config"
+fi
+
+# --- 10. Start services ---
+color_text "$COLOR_SCRIPT" "[SERVICES] -> starting Zabbix services..."
 systemctl restart zabbix-server zabbix-agent2 nginx php8.4-fpm
 systemctl enable zabbix-server zabbix-agent2 nginx php8.4-fpm
 
-
-
-
-
-
-nano /etc/zabbix/zabbix_server.conf
-
-
-nano /etc/php/8.4/fpm/pool.d//zabbix-php-fpm.conf
-Внутри должны быть строки:
-user = nginx
-group = nginx
-
-listen = /var/run/php/zabbix.sock
-listen.owner = nginx
-listen.allowed_clients = 127.0.0.1
-
-
-nano /usr/share/zabbix/ui/conf/zabbix.conf.php
+# --- 11. Result ---
+color_text "$GREEN" "==>>==>>==>> [INSTALL-ZABBIX][✓] ->->-> Zabbix 7.4 installed successfully!"
+color_text "$YELLOW" "[i] Open http://<server-ip> in browser to complete setup"
+color_text "$YELLOW" "[i] Default login: Admin / zabbix"

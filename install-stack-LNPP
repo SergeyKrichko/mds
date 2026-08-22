@@ -1,71 +1,77 @@
 #!/bin/bash
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
-# wget --no-check-certificate https://mls.sk87.top/deb-stack-LNPP && bash deb-stack-LNPP -ngx 1.28.0-1~trixie -psql 18 -php 8.5 
-# version by 2025-11-15
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+# https://mds.sk87.top/install-stack-LNPP
+# bash <(curl -sLf https://mds.sk87.top/install-stack-LNPP) -ngx -psql 18 -php 8.5
 # Sergey Krichko
-#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=# 
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
 set -euo pipefail
-. /etc/os-release
-if [[ $EUID -ne 0 ]]; then
-    echo "[!] run is not root [!] Run as root: sudo bash $0" >&2
-    exit 1
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if ! command -v curl >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y curl >/dev/null
 fi
 #-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+if [[ "${DEB_LIB_STATUS:-}" != "loaded" ]] || ! declare -f color_text >/dev/null 2>&1; then
+    if source <(curl -sLf https://mds.sk87.top/lib); then
+        export DEB_LIB_STATUS="loaded"
+    else
+        echo -e "ERROR: not loaded lib" >&2
+        exit 1
+    fi
+fi
+#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
+module_init "install-stack-LNPP" "$CYAN"
+#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#=#
+. /etc/os-release
+BASE_URL="https://mds.sk87.top"
 
-# Значения по умолчанию
-ngxversion=""
+# --- Parse arguments ---
 psqlversion=""
 phpversion=""
 
 while [[ $# -gt 0 ]]; do
-  key="$1"
-  case $key in
-    -ngx)
-      ngxversion="$2"
-      shift 2
-      ;;
-    -psql)
-      psqlversion="$2"
-      shift 2
-      ;;
-    -php)
-      phpversion="$2"
-      shift 2
-      ;;
-    *)
-      echo "Ошибка: неизвестный параметр $1"
-      echo "Использование: $0 -ngx <версия> -php <версия> -psql <версия>"
-      exit 1
-      ;;
-  esac
+    key="$1"
+    case $key in
+        -ngx)
+            shift
+            ;;
+        -psql)
+            psqlversion="$2"
+            shift 2
+            ;;
+        -php)
+            phpversion="$2"
+            shift 2
+            ;;
+        *)
+            color_text "$RED" "Ошибка: неизвестный параметр $1"
+            color_text "$RED" "Использование: $0 -ngx -psql <версия> -php <версия>"
+            exit 1
+            ;;
+    esac
 done
 
-echo "ngxversion   = $ngxversion"
-echo "phpversion   = $phpversion"
-echo "psqlversion  = $psqlversion"
-sleep 4
+# --- Validate ---
+[[ -z "$psqlversion" ]] && { color_text "$RED" "[!] Не указана версия PostgreSQL (-psql)"; exit 1; }
+[[ -z "$phpversion" ]]  && { color_text "$RED" "[!] Не указана версия PHP (-php)"; exit 1; }
 
-wget --no-check-certificate https://mls.sk87.top/deb-nginx
-bash deb-nginx $ngxversion
-sleep 2
-
-wget --no-check-certificate https://mls.sk87.top/deb-psql
-bash deb-psql $psqlversion
+color_text "$COLOR_SCRIPT" "==>>==>>==>> [STACK-LNPP] ->->-> Installing stack..."
+color_text "$COLOR_SCRIPT" "  NGINX:      latest stable"
+color_text "$COLOR_SCRIPT" "  PostgreSQL: $psqlversion"
+color_text "$COLOR_SCRIPT" "  PHP:        $phpversion"
 sleep 2
 
-wget --no-check-certificate https://mls.sk87.top/deb-php
-bash deb-php $phpversion
-sleep 2
+# --- 1. Install NGINX ---
+color_text "$COLOR_SCRIPT" "[1/3] -> Installing NGINX..."
+bash <(curl -sLf "$BASE_URL/install-nginx")
 
-echo ""
-echo "V=V=V=V=V=V=V=V=V=V=V=V=V=V=V=V=V=V=V"
-echo ""
-sleep 2
-echo "==>>==>>==>>============<<==<<==<<=="
-sleep 2
-echo "==>>==>>==>> STACK LNPP <<==<<==<<=="
-sleep 2
-echo "==>>==>>==>> SUCCESSFUL <<==<<==<<=="
-sleep 2
-echo "==>>==>>==>>============<<==<<==<<=="
-sleep 4
+# --- 2. Install PostgreSQL ---
+color_text "$COLOR_SCRIPT" "[2/3] -> Installing PostgreSQL $psqlversion..."
+bash <(curl -sLf "$BASE_URL/install-psql") "$psqlversion"
+
+# --- 3. Install PHP ---
+color_text "$COLOR_SCRIPT" "[3/3] -> Installing PHP $phpversion..."
+bash <(curl -sLf "$BASE_URL/install-php") "$phpversion"
+
+# --- Result ---
+color_text "$GREEN" "==>>==>>==>> [STACK-LNPP][✓] ->->-> Stack installed successfully!"
+color_text "$GREEN" "  NGINX + PostgreSQL $psqlversion + PHP $phpversion"
